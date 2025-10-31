@@ -1,57 +1,64 @@
-use fon::{stereo::Stereo32, Audio, Sink};
-use pasts::wait;
-use wavy::{Microphone, MicrophoneStream, Speakers, SpeakersSink};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::time::Instant;
 
-/// An event handled by the event loop.
-enum Event<'a> {
-    /// Speaker is ready to play more audio.
-    Play(SpeakersSink<'a, Stereo32>),
-    /// Microphone has recorded some audio.
-    Record(MicrophoneStream<'a, Stereo32>),
-}
+#[allow(warnings)]
+fn main() {
+    let start = Instant::now();
+    let file =
+        File::open("C:/Users/yegla/OneDrive/Desktop/all folders/Rust/FileCompresor/dummy.txt")
+            .expect("Failed to open the file");
+    let reader = BufReader::new(file);
+    let MAX_DISTANCE = 128;
+    let mut word_buffer: Vec<u8> = Vec::new();
+    let mut wordMap: HashMap<String, i32> = HashMap::new();
 
-/// Shared state between tasks on the thread.
-struct State {
-    /// Temporary buffer for holding real-time audio samples.
-    buffer: Audio<Stereo32>,
-}
-
-impl State {
-    fn event(&mut self, event: Event<'_>) {
-        println!("RECEIVED EVENT. BUFFER LEN: {}", self.buffer.len());
-
-        match event {
-            // Event::Play(mut speakers) => speakers.stream(self.buffer.drain()),
-            Event::Record(microphone) => self.buffer.extend(microphone),
-            Event::Play(mut speakers) => {
-                if !self.buffer.is_empty() {
-                    speakers.stream(self.buffer.drain());
-                }
+    for (distance, letter) in reader.bytes().enumerate() {
+        let letter = letter.unwrap();
+        if letter.is_ascii_alphabetic() {
+            word_buffer.push(letter);
+        } else if !word_buffer.is_empty() {
+            let word = String::from_utf8(word_buffer.clone()).unwrap();
+            if word.len() < 5 {
+                print!("{}", word);
+                print!("{}", String::from_utf8(vec![letter]).unwrap_or_else(|_| String::new()));
+                continue;
             }
+
+            let mut distanceBetweenWords = 0;
+            if let Some(&map_word) = wordMap.get(&word) {
+                distanceBetweenWords = findDistance(distance as i32, &word, map_word);
+                print!("{}", makePos(distanceBetweenWords as u8, &word.len()));
+            } else {
+                print!("{}", word)
+            }
+            wordMap.insert(
+                word.clone(),
+                ((distance - word.len()) as usize).try_into().unwrap(),
+            );
+
+            word_buffer.clear();
+            print!("{}", String::from_utf8(vec![letter]).unwrap_or_else(|_| String::new()))
         }
     }
+
+    println!("Ran in {:.2} ms", start.elapsed().as_millis());
+}
+#[allow(warnings)]
+
+fn makePos(offset: u8, length: &usize) -> String {
+    let mat = format!("@{offset}!{length}");
+    mat
 }
 
-async fn run(mut state: State, mut mic: Microphone, mut spk: Speakers) {
-    loop {
-        println!("WAITING FOR AUDIO EVENT...");
-        let event = wait! {
-            Event::Record(mic.record().await),
-            Event::Play(spk.play().await),
-        };
-        println!("EVENT TRIGGERED");
-        state.event(event);
-    }
+#[allow(warnings)]
+fn write(text: String) -> usize {
+    print!("{text} ");
+    text.len()
 }
 
-fn main() {
-    let state = State {
-        buffer: Audio::with_silence(48_000, 2),
-    };
-    let microphone = Microphone::default();
-    let speakers = Speakers::default();
-    println!("Available microphones: {:?}", Microphone::query());
-    println!("Available speakers: {:?}", Speakers::query());
-
-    futures_lite::future::block_on(run(state, microphone, speakers));
+#[allow(warnings)]
+fn findDistance(distance: i32, word: &str, map_word: i32) -> i32 {
+    (distance - 1 - word.len() as i32) - map_word
 }
